@@ -9,14 +9,8 @@ from retry import retry
 
 
 def get_catalogs_wb() -> dict:
-    """получаем полный каталог Wildberries"""
-    # url = 'https://www.wildberries.ru/webapi/menu/main-menu-ru-ru.json'   # устарела ссылка апи
-    # url = 'https://static-basket-01.wb.ru/vol0/data/main-menu-ru-ru-v2.json'   # устарела ссылка апи
-    # url = 'https://static-basket-01.wbbasket.ru/vol0/data/main-menu-ru-ru-v2.json'   # устарела ссылка апи
     url = 'https://static-basket-01.wbbasket.ru/vol0/data/main-menu-ru-ru-v3.json'
     headers = {'Accept': '*/*', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-    # with open('wb_goods_list.json', 'w', encoding='UTF-8') as file:
-    #     json.dump(requests.get(url, headers=headers).json(), file, indent=4, ensure_ascii=False)
     return requests.get(url, headers=headers).json()
 
 
@@ -65,7 +59,6 @@ def get_data_from_json(json_file: dict, min_rating: float = 0.0, low_price: int 
             data_list.append({
                 'id': data.get('id'),
                 'name': data.get('name'),
-                'price': salePriceU,  # Теперь это будет цена со скидкой (если есть)
                 'salePriceU': salePriceU,  # Явно добавляем цену со скидкой
                 'cashback': data.get('feedbackPoints'),
                 'sale': data.get('sale'),
@@ -75,8 +68,6 @@ def get_data_from_json(json_file: dict, min_rating: float = 0.0, low_price: int 
                 'supplierRating': data.get('supplierRating'),
                 'feedbacks': data.get('feedbacks'),
                 'reviewRating': reviewRating,
-                'promoTextCard': data.get('promoTextCard'),
-                'promoTextCat': data.get('promoTextCat'),
                 'link': f'https://www.wildberries.ru/catalog/{data.get("id")}/detail.aspx?targetUrl=BP'
             })
     return data_list
@@ -147,19 +138,16 @@ def save_excel(data: list, filename: str):
         worksheet = writer.sheets['data']
         worksheet.set_column(0, 1, width=10)
         worksheet.set_column(1, 2, width=34)
-        worksheet.set_column(2, 3, width=8)
-        worksheet.set_column(3, 4, width=9)
-        worksheet.set_column(4, 5, width=8)
-        worksheet.set_column(5, 6, width=4)
-        worksheet.set_column(6, 7, width=20)
-        worksheet.set_column(7, 8, width=6)
-        worksheet.set_column(8, 9, width=23)
-        worksheet.set_column(9, 10, width=13)
-        worksheet.set_column(10, 11, width=11)
-        worksheet.set_column(11, 12, width=12)
-        worksheet.set_column(12, 13, width=15)
-        worksheet.set_column(13, 14, width=15)
-        worksheet.set_column(14, 15, width=67)
+        worksheet.set_column(2, 3, width=9)
+        worksheet.set_column(3, 4, width=8)
+        worksheet.set_column(4, 5, width=4)
+        worksheet.set_column(5, 6, width=20)
+        worksheet.set_column(6, 7, width=6)
+        worksheet.set_column(7, 8, width=23)
+        worksheet.set_column(8, 9, width=13)
+        worksheet.set_column(9, 10, width=11)
+        worksheet.set_column(10, 11, width=12)
+        worksheet.set_column(11, 12, width=67)
     print(f'Все сохранено в {filename}.xlsx\n')
 
 if __name__ == '__main__':
