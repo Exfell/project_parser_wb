@@ -3,17 +3,25 @@ import requests
 import json
 import pandas as pd
 from retry import retry
+import re
+import math
+import time  # Импорт модуля для добавления задержки
+from fake_useragent import UserAgent
+
 # pip install openpyxl
 # pip install xlsxwriter
 
-
+# чтобы получить json, надо сделать то же, что делал и Тимур в get_catalog
 """Сбор данных со страниц с фильтром по рейтингу, собираем всю возможную информацию по нужному url"""
+# полностью работает
 
 @retry(Exception, tries=-1, delay=0)
-def scrap_page(keywords: str,page: int, low_price: int, top_price: int, discount: int = None, rating: float = 0) -> dict:
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0)"}
+def scrap_page(keywords: str, page: int, low_price: int, top_price: int, discount: int = None,
+               rating: float = 0) -> dict:
+    ua = UserAgent()
+    current = ua.random
+    headers = {"User-Agent": current}
     keywords = keywords.replace(' ', '%20')  # Кодируем пробелы в ключевых словах
-
     url = (
         f'https://search.wb.ru/exactmatch/ru/common/v4/search?'
         f'appType=1'
@@ -21,11 +29,10 @@ def scrap_page(keywords: str,page: int, low_price: int, top_price: int, discount
         f'&dest=-1257786'
         f'&locale=ru'
         f'&query={keywords}' \
-        f'&resultset=catalog'\
+        f'&resultset=catalog' \
         f'&page={page}' \
         f'&priceU={low_price * 100};{top_price * 100}' \
         f'&sort=popular&spp=0' \
-        f'&{keywords}' \
         f'&discount={discount}' \
         f'&rating={rating}'
     )
@@ -39,24 +46,34 @@ def scrap_page(keywords: str,page: int, low_price: int, top_price: int, discount
         raise Exception(f"Request failed with status code {response.status_code}: {response.text}")
 
 
-# здесь уже выбираем только нужную информацию. Если name in категории кароче сделаешь
-def get_data_from_json(json_file: dict, min_rating: float = 0.0, low_price: int = 1, top_price: int = 1000000,
-                       keywords: list = None) -> list:
+def get_total(json_file: dict):
+    total_items = json_file["data"].get("total", 0)
+    return total_items
+
+
+def first_check(json_file):
     data_list = []
-    # да нам, собственно-то, и категория не нужна.
+    '''Выбираем нужные нам параметры'''
     for data in json_file['data']['products']:
         # Используем цену со скидкой, если она есть, иначе - обычную цену
         salePriceU = int(data.get('salePriceU', 0) / 100) if data.get('salePriceU') else int(
             data.get("priceU", 0) / 100)
         reviewRating = data.get('reviewRating', 0)
+        data_list.append('res')
+    return data_list
 
-        # Проверка фильтров: по рейтингу и цене
+
+# здесь уже выбираем только нужную информацию. Если name in категории кароче сделаешь
+unique_characteristics = {}
+def get_data_from_json(json_file: dict, min_rating: float = 0.0, low_price: int = 1, top_price: int = 1000000,) -> list:
+    data_list = []
+    '''Выбираем нужные нам параметры'''
+    for data in json_file['data']['products']:
+        # Используем цену со скидкой, если она есть, иначе - обычную цену
+        salePriceU = int(data.get('salePriceU', 0) / 100) if data.get('salePriceU') else int(
+            data.get("priceU", 0) / 100)
+        reviewRating = data.get('reviewRating', 0)
         if reviewRating >= min_rating and low_price <= salePriceU <= top_price:
-            # Проверка ключевых слов в названии товара
-            if keywords and not any(keyword.lower() in data.get('name', '').lower() for keyword in keywords):
-                continue  # Пропускаем товар, если ни одно ключевое слово не найдено
-
-            # Если все проверки прошли, добавляем товар в список
             data_list.append({
                 'id': data.get('id'),
                 'name': data.get('name'),
@@ -74,41 +91,101 @@ def get_data_from_json(json_file: dict, min_rating: float = 0.0, low_price: int 
     return data_list
 
 
-def parser(keywords: str = None, low_price: int = 1, top_price: int = 1000000, discount: int = 0, min_rating: float = 0):
+def sanitize_filename(filename: str) -> str:
+    # Заменяем все недопустимые символы на "_"
+    sanitized = re.sub(r'[<>:"/\\|?*]', '_', filename)
+    # Убираем начальные и конечные пробелы
+    sanitized = sanitized.strip()
+    return sanitized
+
+
+def scrap_page_with_retries(page: int, low_price: int, top_price: int, discount: int, keywords: str, min_rating: float,
+                            expected_count: int, max_retries: int = 5):
+    retries = 0
+    while retries < max_retries:
+        data = scrap_page(
+            page=page,
+            low_price=low_price,
+            top_price=top_price,
+            discount=discount,
+            keywords=keywords,
+            rating=min_rating,
+        )
+        print()
+        # Проверяем, сколько товаров вернулось
+        extracted_data = first_check(data)
+        if len(extracted_data) >= expected_count:
+            return data
+        retries += 1
+        print(f"Некорректное количество товаров на странице {page}. Повтор попытки {retries}/{max_retries}...")
+    print(
+        f"Не удалось получить корректные данные для страницы {page} после {max_retries} попыток. Скорее всего, это очень узкий поиск.")
+    return None
+
+
+def get_settings(id: str):
+    ua = UserAgent()
+    current = ua.random
+    headers = {"User-Agent": current}
+    for i in range(30):  # Перебор basket
+        basket_id = f"{i:02d}"  # Форматирование, чтобы всегда было два символа
+        try:
+            moz = len(id) - 3
+            url = f'https://basket-{basket_id}.wbbasket.ru/vol{id[:(moz - 2)]}/part{id[:moz]}/{id}/info/ru/card.json'
+            response = requests.get(url, headers=headers)
+            if response.status_code == 200:
+                return response.json()  # Возвращаем JSON-данные, если запрос успешен
+        except requests.exceptions.RequestException:
+            continue
+    raise Exception(f"Не удалось получить JSON для id: {id}")
+
+
+def parser(keywords: str = None, low_price: int = 1, top_price: int = 1000000, discount: int = 0,
+           min_rating: float = 0):
     """Основная функция с фильтрацией по ключевым словам"""
     try:
         # Поиск введенной категории в общем каталоге
         data_list = []
+        data_t = scrap_page_with_retries(page=1, low_price=low_price, top_price=top_price, discount=discount,
+                                         min_rating=min_rating, expected_count=2, keywords=keywords)
+        total = get_total(data_t)
+        items_per_page = 100
+        # Количество страниц
+        pages = math.ceil(total / items_per_page)
+        if pages > 60:  # ВБ отдает максимум 50 страниц товара
+            pages = 60
 
-        for page in range(1, 51):  # ВБ отдает максимум 50 страниц товара
-            data = scrap_page(
+        for page in range(1, pages + 1):
+            print('Страница ',page)
+            expected_count = min(items_per_page, total - 100 * (page - 1))
+            data = scrap_page_with_retries(
                 page=page,
                 low_price=low_price,
                 top_price=top_price,
                 discount=discount,
                 keywords=keywords,
-                rating=min_rating,
+                min_rating=min_rating,
+                expected_count=expected_count
             )
             # на выходе получаются все товары на странице
             # Передаем минимальный рейтинг и ключевые слова для фильтрации товаров
-            extracted_data = get_data_from_json(data, min_rating=min_rating, low_price=low_price, top_price=top_price, keywords=keywords)
+            extracted_data = get_data_from_json(data, min_rating=min_rating, low_price=low_price, top_price=top_price)
             print(f'Страница {page}. Добавлено позиций: {len(extracted_data)}')
-
             if extracted_data:
                 data_list.extend(extracted_data)
-            else:
-                break
-        category = data['metadata']['normquery']
+            # Добавляем задержку перед следующим запросом
+            # time.sleep(3)  # Эта задержка нужна, чтобы у нас был не всякий мусор, но API wb успевал подгружать нужные файлы. Кароче, это ещё может быть из-за всяких там пиковых нагрузок на сервер wb и т.п.
+        category = data_t['metadata']['title']
         print(f'Сбор данных завершен. Собрано: {len(data_list)} товаров.')
-        save_excel(data_list, f'{category}_from_{low_price}_to_{top_price}_rating_{min_rating}_keywords')
-
+        filename = sanitize_filename(f'{category}_from_{low_price}_to_{top_price}_rating_{min_rating}')
+        save_excel(data_list, filename)
+        return f'{filename}.xlsx'
     except TypeError:
         print('Ошибка! Возможно, не верно указан раздел. Удалите все доп фильтры с ссылки.')
     except PermissionError:
         print('Ошибка! Закройте созданный ранее Excel файл и повторите попытку.')
 
-
-#это менять я не буду
+# это мы переделаем, чтобы он динамично считал
 def save_excel(data: list, filename: str):
     """сохранение результата в excel файл"""
     df = pd.DataFrame(data)
@@ -129,7 +206,6 @@ def save_excel(data: list, filename: str):
         worksheet.set_column(9, 10, width=11)
         worksheet.set_column(10, 11, width=12)
         worksheet.set_column(11, 12, width=67)
-    print(f'Все сохранено в {filename}.xlsx\n')
 
 
 # здесь фактически я ничего не меняю, кроме того, что убираем запрос по url
@@ -141,7 +217,8 @@ if __name__ == '__main__':
             top_price = int(input('Введите максимальную сумму товара: '))
             discount = int(input('Введите минимальную скидку (введите 0 если без скидки): '))
             min_rating = float(input('Введите минимальную оценку (введите 0 для любого рейтинга): '))
-            parser(low_price=low_price, top_price=top_price, discount=discount, min_rating=min_rating, keywords=keywords)
+            parser(low_price=low_price, top_price=top_price, discount=discount, min_rating=min_rating,
+                   keywords=keywords)
         except ValueError:
             print('Ошибка ввода! Проверьте, что все введенные данные являются числами.\nПерезапуск...')
 
