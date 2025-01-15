@@ -51,20 +51,7 @@ def get_total(json_file: dict):
     return total_items
 
 
-def first_check(json_file):
-    data_list = []
-    '''Выбираем нужные нам параметры'''
-    for data in json_file['data']['products']:
-        # Используем цену со скидкой, если она есть, иначе - обычную цену
-        salePriceU = int(data.get('salePriceU', 0) / 100) if data.get('salePriceU') else int(
-            data.get("priceU", 0) / 100)
-        reviewRating = data.get('reviewRating', 0)
-        data_list.append('res')
-    return data_list
-
-
 # здесь уже выбираем только нужную информацию. Если name in категории кароче сделаешь
-unique_characteristics = {}
 def get_data_from_json(json_file: dict, min_rating: float = 0.0, low_price: int = 1, top_price: int = 1000000,) -> list:
     data_list = []
     '''Выбираем нужные нам параметры'''
@@ -99,8 +86,7 @@ def sanitize_filename(filename: str) -> str:
     return sanitized
 
 
-def scrap_page_with_retries(page: int, low_price: int, top_price: int, discount: int, keywords: str, min_rating: float,
-                            expected_count: int, max_retries: int = 5):
+def scrap_page_with_retries(page: int, low_price: int, top_price: int, discount: int, keywords: str, min_rating: float, max_retries: int = 10):
     retries = 0
     while retries < max_retries:
         data = scrap_page(
@@ -111,10 +97,8 @@ def scrap_page_with_retries(page: int, low_price: int, top_price: int, discount:
             keywords=keywords,
             rating=min_rating,
         )
-        print()
         # Проверяем, сколько товаров вернулось
-        extracted_data = first_check(data)
-        if len(extracted_data) >= expected_count:
+        if get_total(data)>1:
             return data
         retries += 1
         print(f"Некорректное количество товаров на странице {page}. Повтор попытки {retries}/{max_retries}...")
@@ -123,41 +107,22 @@ def scrap_page_with_retries(page: int, low_price: int, top_price: int, discount:
     return None
 
 
-def get_settings(id: str):
-    ua = UserAgent()
-    current = ua.random
-    headers = {"User-Agent": current}
-    for i in range(30):  # Перебор basket
-        basket_id = f"{i:02d}"  # Форматирование, чтобы всегда было два символа
-        try:
-            moz = len(id) - 3
-            url = f'https://basket-{basket_id}.wbbasket.ru/vol{id[:(moz - 2)]}/part{id[:moz]}/{id}/info/ru/card.json'
-            response = requests.get(url, headers=headers)
-            if response.status_code == 200:
-                return response.json()  # Возвращаем JSON-данные, если запрос успешен
-        except requests.exceptions.RequestException:
-            continue
-    raise Exception(f"Не удалось получить JSON для id: {id}")
-
-
 def parser(keywords: str = None, low_price: int = 1, top_price: int = 1000000, discount: int = 0,
            min_rating: float = 0):
     """Основная функция с фильтрацией по ключевым словам"""
     try:
         # Поиск введенной категории в общем каталоге
-        data_list = []
         data_t = scrap_page_with_retries(page=1, low_price=low_price, top_price=top_price, discount=discount,
-                                         min_rating=min_rating, expected_count=2, keywords=keywords)
+                                         min_rating=min_rating, keywords=keywords)
         total = get_total(data_t)
         items_per_page = 100
         # Количество страниц
         pages = math.ceil(total / items_per_page)
         if pages > 60:  # ВБ отдает максимум 50 страниц товара
             pages = 60
-
+        data_list = []
         for page in range(1, pages + 1):
-            print('Страница ',page)
-            expected_count = min(items_per_page, total - 100 * (page - 1))
+            #expected_count = min(items_per_page, total - 100 * (page - 1))
             data = scrap_page_with_retries(
                 page=page,
                 low_price=low_price,
@@ -165,7 +130,6 @@ def parser(keywords: str = None, low_price: int = 1, top_price: int = 1000000, d
                 discount=discount,
                 keywords=keywords,
                 min_rating=min_rating,
-                expected_count=expected_count
             )
             # на выходе получаются все товары на странице
             # Передаем минимальный рейтинг и ключевые слова для фильтрации товаров
