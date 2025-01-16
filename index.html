@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Парсер Wildberries</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+            background: rgb(176, 62, 153);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        header {
+            height: 50px;
+            background-color: rgb(163, 73, 164);
+        }
+        footer {
+            background-color: white;
+            color: black;
+            padding: 20px;
+            text-align: center;
+            font-size: 18px;
+            line-height: 24px;
+            margin-top: auto;
+        }
+        input {
+            padding: 10px;
+            width: 400px;
+            height: 30px;
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            cursor: pointer;
+            margin: 20px 10px;
+            border: none;
+            background-color: #007bff;
+            color: white;
+            border-radius: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .result {
+            margin: 20px;
+            font-weight: bold;
+        }
+        a {
+            color: #00ff00;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <header></header>
+    <br>
+    <h1>Парсер Wildberries</h1>
+    <h2>  60 страниц товаров = 15 секунд времени! <h2>
+    <div>
+        <input type="text" id="keywords" placeholder="Введите свой запрос">
+        <br>
+        <input type="number" id="low_price" placeholder="Введите минимальную сумму">
+        <br>
+        <input type="number" id="top_price" placeholder="Введите максимальную сумму">
+        <br>
+        <input type="number" id="discount" placeholder="Минимальная скидка (0, если не важно)">
+        <br>
+        <input type="number" step="0.1" id="min_rating" placeholder="Минимальная оценка (0, если не важно)">
+        <br>
+        <button onclick="sendRequest()">Отправить</button>
+    </div>
+    <div class="result" id="result"></div>
+
+    <footer>
+  <p> Братья и сёстры! </p>
+        <p>
+            Этот парсер - пробный проект, который может стать чем-то большим. Пока что это можно за уши притянуть на версию 0.5. Контакты, на которые можно отправлять вопросы и пожелания, оставил ниже.
+        </p>
+        <p>
+            Меня пока что интересует вот что:
+            <br>
+            1) Какие возникли проблемы при работе с парсером?
+            <br>
+            2) Зачем вы используете этот проект, а не обычный выбор на Wildberries? Почему вы выбрали парсер, а не обычный поиск на Wildberries?
+            <br>
+            3) Какие у вас есть пожелания для улучшения работы парсера или самого сайта?
+        </p>
+  <p> Мир вам! </p>
+        <p>Email: roma14062007cs@gmail.com <p>
+        <p> Telegram: https://t.me/romansubbotin0 </p>
+    </footer>
+    <script>
+        async function sendRequest() {
+            const keywords = document.getElementById("keywords").value;
+            const lowPrice = document.getElementById("low_price").value;
+            const topPrice = document.getElementById("top_price").value;
+            const discount = document.getElementById("discount").value;
+            const minRating = document.getElementById("min_rating").value;
+            const resultDiv = document.getElementById("result");
+            // Очистка блока результата перед новым запросом
+            resultDiv.textContent = "";
+
+            try {
+                // Отправка POST-запроса на сервер
+                resultDiv.textContent = "Парсинг в процессе...";
+                const response = await fetch("http://127.0.0.1:5000/api/parse", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        keywords: keywords,
+                        low_price: parseInt(lowPrice),
+                        top_price: parseInt(topPrice),
+                        discount: parseInt(discount),
+                        min_rating: parseFloat(minRating)
+                    })
+                });
+
+                // Обработка ответа
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Вывод успешного сообщения
+                    resultDiv.textContent = data.message;
+
+                    // Создание ссылки для скачивания
+                    const downloadUrl = `http://127.0.0.1:5000/download/${data.file}`;
+                    const a = document.createElement("a");
+                    a.href = downloadUrl;
+                    a.download = data.file;
+                    a.textContent = "Скачать результат";
+                    resultDiv.appendChild(document.createElement("br")); // Разрыв строки
+                    resultDiv.appendChild(a); // Добавление ссылки на страницу
+                } else {
+                    resultDiv.textContent = `Ошибка: ${data.message}`;
+                }
+            } catch (error) {
+                resultDiv.textContent = "Произошла ошибка при выполнении запроса.";
+            }
+        }
+    </script>
+</body>
+</html>
