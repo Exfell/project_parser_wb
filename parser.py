@@ -1,49 +1,47 @@
+import aiohttp
+import asyncio
 import datetime
-import requests
 import json
 import pandas as pd
-from retry import retry
 import re
-import math
-import time  # Импорт модуля для добавления задержки
+import math, time
+from aiohttp import ClientSession
 from fake_useragent import UserAgent
 
 # pip install openpyxl
+# pip install aiohttp
 # pip install xlsxwriter
 
-# чтобы получить json, надо сделать то же, что делал и Тимур в get_catalog
-"""Сбор данных со страниц с фильтром по рейтингу, собираем всю возможную информацию по нужному url"""
-# полностью работает
-
-@retry(Exception, tries=-1, delay=0)
-def scrap_page(keywords: str, page: int, low_price: int, top_price: int, discount: int = None,
-               rating: float = 0) -> dict:
+async def scrap_page(session: ClientSession, keywords: str, page: int, low_price: int, top_price: int, discount: int = None, rating: float = 0) -> dict:
+    """Асинхронная функция для запроса страницы."""
     ua = UserAgent()
     current = ua.random
-    headers = {"User-Agent": current}
-    keywords = keywords.replace(' ', '%20')  # Кодируем пробелы в ключевых словах
+    keywords = keywords.replace(' ', '%20')
+
     url = (
         f'https://search.wb.ru/exactmatch/ru/common/v4/search?'
-        f'appType=1'
-        f'&curr=rub'
-        f'&dest=-1257786'
-        f'&locale=ru'
-        f'&query={keywords}' \
-        f'&resultset=catalog' \
-        f'&page={page}' \
-        f'&priceU={low_price * 100};{top_price * 100}' \
-        f'&sort=popular&spp=0' \
-        f'&discount={discount}' \
-        f'&rating={rating}'
+        f'appType=1&curr=rub&dest=-1257786&locale=ru&query={keywords}'
+        f'&resultset=catalog&page={page}&priceU={low_price * 100};{top_price * 100}'
+        f'&sort=popular&spp=0&discount={discount}&rating={rating}'
     )
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        try:
-            return response.json()  # Возвращаем JSON-ответ
-        except ValueError:
-            raise ValueError("Failed to parse JSON response")
-    else:
-        raise Exception(f"Request failed with status code {response.status_code}: {response.text}")
+
+    headers = {
+        'User-Agent': current,
+        'Accept': 'application/json',
+    }
+
+    async with session.get(url, headers=headers) as response:
+        response_text = await response.text()  # Получаем текст ответа
+
+        if response.status == 200:
+            try:
+                # Используем json.loads на строке текста
+                json_data = json.loads(response_text)
+                return json_data
+            except json.JSONDecodeError:
+                raise ValueError("Failed to parse JSON response")
+        else:
+            raise Exception(f"Request failed with status code {response.status}: {response_text}")
 
 
 def get_total(json_file: dict):
@@ -51,14 +49,10 @@ def get_total(json_file: dict):
     return total_items
 
 
-# здесь уже выбираем только нужную информацию. Если name in категории кароче сделаешь
-def get_data_from_json(json_file: dict, min_rating: float = 0.0, low_price: int = 1, top_price: int = 1000000,) -> list:
+def get_data_from_json(json_file: dict, min_rating: float = 0.0, low_price: int = 1, top_price: int = 1000000) -> list:
     data_list = []
-    '''Выбираем нужные нам параметры'''
     for data in json_file['data']['products']:
-        # Используем цену со скидкой, если она есть, иначе - обычную цену
-        salePriceU = int(data.get('salePriceU', 0) / 100) if data.get('salePriceU') else int(
-            data.get("priceU", 0) / 100)
+        salePriceU = int(data.get('salePriceU', 0) / 100) if data.get('salePriceU') else int(data.get("priceU", 0) / 100)
         reviewRating = data.get('reviewRating', 0)
         if reviewRating >= min_rating and low_price <= salePriceU <= top_price:
             data_list.append({
@@ -79,84 +73,61 @@ def get_data_from_json(json_file: dict, min_rating: float = 0.0, low_price: int 
 
 
 def sanitize_filename(filename: str) -> str:
-    # Заменяем все недопустимые символы на "_"
     sanitized = re.sub(r'[<>:"/\\|?*]', '_', filename)
-    # Убираем начальные и конечные пробелы
     sanitized = sanitized.strip()
     return sanitized
 
 
-def scrap_page_with_retries(page: int, low_price: int, top_price: int, discount: int, keywords: str, min_rating: float, max_retries: int = 10):
+async def scrap_page_with_retries(session: ClientSession, page: int, low_price: int, top_price: int, discount: int, keywords: str, min_rating: float, max_retries: int = 10):
     retries = 0
     while retries < max_retries:
-        data = scrap_page(
-            page=page,
-            low_price=low_price,
-            top_price=top_price,
-            discount=discount,
-            keywords=keywords,
-            rating=min_rating,
-        )
-        # Проверяем, сколько товаров вернулось
-        if get_total(data)>1:
-            return data
+        try:
+            data = await scrap_page(session, keywords, page, low_price, top_price, discount, min_rating)
+            if get_total(data) > 1:
+                return data
+        except Exception as e:
+            print(f"Ошибка на странице {page}: {e}. Попытка {retries + 1}/{max_retries}...")
         retries += 1
-        print(f"Некорректное количество товаров на странице {page}. Повтор попытки {retries}/{max_retries}...")
-    print(
-        f"Не удалось получить корректные данные для страницы {page} после {max_retries} попыток. Скорее всего, это очень узкий поиск.")
+    print(f"Не удалось получить данные для страницы {page} после {max_retries} попыток.")
     return None
 
 
-def parser(keywords: str = None, low_price: int = 1, top_price: int = 1000000, discount: int = 0,
-           min_rating: float = 0):
-    """Основная функция с фильтрацией по ключевым словам"""
-    try:
-        # Поиск введенной категории в общем каталоге
-        data_t = scrap_page_with_retries(page=1, low_price=low_price, top_price=top_price, discount=discount,
-                                         min_rating=min_rating, keywords=keywords)
+async def parser(keywords: str = None, low_price: int = 1, top_price: int = 1000000, discount: int = 0, min_rating: float = 0):
+    async with aiohttp.ClientSession() as session:
+        data_t = await scrap_page_with_retries(session, page=1, low_price=low_price, top_price=top_price, discount=discount, keywords=keywords, min_rating=min_rating)
+        if not data_t:
+            print("Ошибка! Не удалось получить данные для первой страницы.")
+            return
+
         total = get_total(data_t)
         items_per_page = 100
-        # Количество страниц
         pages = math.ceil(total / items_per_page)
-        if pages > 60:  # ВБ отдает максимум 50 страниц товара
+        if pages > 60:
             pages = 60
+
         data_list = []
+        tasks = []
         for page in range(1, pages + 1):
-            #expected_count = min(items_per_page, total - 100 * (page - 1))
-            data = scrap_page_with_retries(
-                page=page,
-                low_price=low_price,
-                top_price=top_price,
-                discount=discount,
-                keywords=keywords,
-                min_rating=min_rating,
-            )
-            # на выходе получаются все товары на странице
-            # Передаем минимальный рейтинг и ключевые слова для фильтрации товаров
-            extracted_data = get_data_from_json(data, min_rating=min_rating, low_price=low_price, top_price=top_price)
-            print(f'Страница {page}. Добавлено позиций: {len(extracted_data)}')
-            if extracted_data:
+            tasks.append(scrap_page_with_retries(session, page, low_price, top_price, discount, keywords, min_rating))
+
+        results = await asyncio.gather(*tasks)
+
+        for result in results:
+            if result:
+                extracted_data = get_data_from_json(result, min_rating=min_rating, low_price=low_price, top_price=top_price)
                 data_list.extend(extracted_data)
-            # Добавляем задержку перед следующим запросом
-            # time.sleep(3)  # Эта задержка нужна, чтобы у нас был не всякий мусор, но API wb успевал подгружать нужные файлы. Кароче, это ещё может быть из-за всяких там пиковых нагрузок на сервер wb и т.п.
+
         category = data_t['metadata']['title']
         print(f'Сбор данных завершен. Собрано: {len(data_list)} товаров.')
         filename = sanitize_filename(f'{category}_from_{low_price}_to_{top_price}_rating_{min_rating}')
         save_excel(data_list, filename)
         return f'{filename}.xlsx'
-    except TypeError:
-        print('Ошибка! Возможно, не верно указан раздел. Удалите все доп фильтры с ссылки.')
-    except PermissionError:
-        print('Ошибка! Закройте созданный ранее Excel файл и повторите попытку.')
 
-# это мы переделаем, чтобы он динамично считал
+
 def save_excel(data: list, filename: str):
-    """сохранение результата в excel файл"""
     df = pd.DataFrame(data)
-    # Добавляем engine='xlsxwriter' для поддержки записи
     with pd.ExcelWriter(f'{filename}.xlsx', engine='xlsxwriter') as writer:
         df.to_excel(writer, sheet_name='data', index=False)
-        # указываем размеры каждого столбца в итоговом файле
         worksheet = writer.sheets['data']
         worksheet.set_column(0, 1, width=10)
         worksheet.set_column(1, 2, width=34)
@@ -172,7 +143,6 @@ def save_excel(data: list, filename: str):
         worksheet.set_column(11, 12, width=67)
 
 
-# здесь фактически я ничего не меняю, кроме того, что убираем запрос по url
 if __name__ == '__main__':
     while True:
         try:
@@ -181,10 +151,9 @@ if __name__ == '__main__':
             top_price = int(input('Введите максимальную сумму товара: '))
             discount = int(input('Введите минимальную скидку (введите 0 если без скидки): '))
             min_rating = float(input('Введите минимальную оценку (введите 0 для любого рейтинга): '))
-            parser(low_price=low_price, top_price=top_price, discount=discount, min_rating=min_rating,
-                   keywords=keywords)
+            start = time.time()
+            asyncio.run(parser(low_price=low_price, top_price=top_price, discount=discount, min_rating=min_rating, keywords=keywords))
+            end = time.time()
+            print(end-start)
         except ValueError:
             print('Ошибка ввода! Проверьте, что все введенные данные являются числами.\nПерезапуск...')
-
-# Итак, что мы будем делать. Можно ведь просто по этой штуке проходить, просто сделать url это...
-# Итак, у нас, я так понял, фактически уже есть категория, и нам надо только по page ходить и смотреть. Посмотрим.
