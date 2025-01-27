@@ -102,6 +102,9 @@
         <p> Telegram: https://t.me/romansubbotin0 </p>
     </footer>
     <script>
+        // Выносим IP-адрес сервера в переменную
+        const serverIP = "http://62.113.42.136";
+
         async function sendRequest() {
             const keywords = document.getElementById("keywords").value;
             const lowPrice = document.getElementById("low_price").value;
@@ -115,7 +118,7 @@
             try {
                 // Отправка POST-запроса на сервер
                 resultDiv.textContent = "Парсинг в процессе...";
-                const response = await fetch("http://127.0.0.1:5000/api/parse", {
+                const response = await fetch(`${serverIP}/api/parse`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -135,7 +138,7 @@
                     resultDiv.textContent = data.message;
 
                     // Создание ссылки для скачивания
-                    const downloadUrl = `http://127.0.0.1:5000/download/${data.file}`;
+                    const downloadUrl = `${serverIP}/download/${data.file}`;
                     const a = document.createElement("a");
                     a.href = downloadUrl;
                     a.download = data.file;
