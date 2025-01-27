@@ -38,12 +38,14 @@ async def download(filename):
         response = await send_file(file_path, as_attachment=True)
         print('Работает')
 
-        # Удаляем файл после отправки через 5 секунд
-
         return response
 
     except Exception as e:
         return jsonify({"message": f"Ошибка при отправке файла: {e}"}), 500
+
+@app.route('/api/hello', methods=['GET'])
+async def hello():
+    return "Hello, World!"
 
 
 if __name__ == '__main__':
