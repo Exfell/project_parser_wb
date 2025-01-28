@@ -15,10 +15,10 @@ async def api_parse():
     try:
         data = await request.json
         keywords = data.get('keywords', '')
-        low_price = int(data.get('low_price', 1))
-        top_price = int(data.get('top_price', 1000000))
-        discount = int(data.get('discount', 0))
-        min_rating = float(data.get('min_rating', 0))
+        low_price = int(data.get('low_price', 1) or 1)  # Если значение пустое, подставляем 1
+        top_price = int(data.get('top_price', 1000000) or 1000000)  # Если значение пустое, подставляем 1000000
+        discount = int(data.get('discount', 0) or 0)  # Если значение пустое, подставляем 0
+        min_rating = float(data.get('min_rating', 0) or 0)  # Если значение пустое, подставляем 0
         # Вызов парсера
         filename = await parser(keywords, low_price, top_price, discount, min_rating) # Используйте await
         return jsonify({"message": "Парсинг завершен успешно!", "file": filename})
