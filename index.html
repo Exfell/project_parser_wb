@@ -61,13 +61,52 @@
         a:hover {
             text-decoration: underline;
         }
+        .news-feed {
+            display: flex;
+            gap: 20px;
+            padding: 20px;
+			overflow: auto;
+			justify-content: center; 
+            background-color: rgb(153, 50, 144);
+            margin-bottom: 20px;
+            border-radius: 10px;
+        }
+        .news-item {
+            background: white;
+            color: black;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            width: 250px;
+			height: 400px;
+        }
+        .news-item h3 {
+            margin: 0;
+            font-size: 18px;
+            padding: 15px;
+            background-color: rgb(240, 240, 240);
+            border-bottom: 1px solid #ccc;
+        }
+        .news-item img {
+            width: 100%;
+            height: 200px;
+            display: block;
+			object-fit: cover;
+        }
+        .news-item .content {
+            padding: 15px;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
     <header></header>
     <br>
     <h1>Сбор товаров с Wildberries в Excel таблицу</h1>
-    <h2>  60 страниц товаров = 20 секунд времени! <h2>
+    <h2>60 страниц товаров = 20 секунд времени!</h2>
     <div>
         <input type="text" id="keywords" placeholder="Введите свой запрос (например: куртка зимняя)">
         <br>
@@ -83,8 +122,26 @@
     </div>
     <div class="result" id="result"></div>
 
+    <!-- Лента новостей -->
+    <div class="news-feed">
+        <div class="news-item">
+            <h3>Мы запустились!</h3>
+            <img src="https://i.ibb.co/P95T2C9/image.jpg" alt="Новость 1">
+            <div class="content">
+                <p>Сайт вышел в сеть интернет! На момент написания - единственный бесплатный подобный инструмент в интернете! <br> 28.01.25</p>
+            </div>
+        </div>
+        <div class="news-item">
+            <h3>Дальше-больше!</h3>
+            <img src="https://i.ibb.co/W2gXq8x/photo-1508558936510-0af1e3cccbab.jpg" alt="Новость 1">
+            <div class="content">
+                <p>Планируется: атоматический выбор лучшего товара, поддержка Ozon и учтение предложений!</p>
+            </div>
+        </div>		
+    </div>
+	
     <footer>
-  <p> Братья и сёстры! </p>
+        <p>Братья и сёстры!</p>
         <p>
             Этот парсер (так называется сборщик данных) - пробный проект, который может стать чем-то большим. Пока что это можно за уши притянуть на версию 0.5. Возможны небольшие задержки, т.к. сервер слабый - тестовый, с вашей поддержкой мы можем развить это до мощного сервера. Контакты, на которые можно отправлять вопросы и пожелания, оставил ниже.
         </p>
@@ -97,12 +154,13 @@
             <br>
             3) Какие у вас есть пожелания для улучшения работы парсера или самого сайта?
         </p>
-  <p> Мир вам! </p>
-        <p>Email: roma14062007cs@gmail.com <p>
-        <p> Telegram: https://t.me/romansubbotin0 </p>
-        <p> Вклад в развитие можно внести по телефону +79224300482 ВТБ </p>
+        <p>Мир вам!</p>
+        <p>Email: roma14062007cs@yandex.ru<p>
+        <p>Telegram: https://t.me/romansubbotin0</p>
+        <p>Вклад в развитие можно внести переводом по телефону +79224300482 ВТБ</p>
     </footer>
-    <script>
+
+	<script>
         // Выносим IP-адрес сервера в переменную
         const serverIP = "http://62.113.42.136";
 
