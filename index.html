@@ -49,6 +49,13 @@
         button:hover {
             background-color: #0056b3;
         }
+		button:disabled {
+			background-color: #cccccc;
+			cursor: not-allowed;
+		}
+		button:disabled:hover {
+			background-color: #cccccc;
+		}
         .result {
             margin: 20px;
             font-weight: bold;
@@ -118,7 +125,7 @@
         <br>
         <input type="number" step="0.1" id="min_rating" placeholder="Минимальная оценка (0, если не важно)">
         <br>
-        <button onclick="sendRequest()">Отправить</button>
+        <button id="submitBtn" onclick="sendRequest()">Отправить</button>
     </div>
     <div class="result" id="result"></div>
 
@@ -165,6 +172,8 @@
         const serverIP = "http://62.113.42.136";
 
         async function sendRequest() {
+			const button = document.getElementById("submitBtn"); // Получаем кнопку
+			button.disabled = true; // Блокируем кнопку при начале запроса
             const keywords = document.getElementById("keywords").value;
             const lowPrice = document.getElementById("low_price").value;
             const topPrice = document.getElementById("top_price").value;
@@ -209,8 +218,10 @@
                 }
             } catch (error) {
                 resultDiv.textContent = "Произошла ошибка при выполнении запроса.";
-            }
-        }
+            }finally {
+				button.disabled = false;
+			}
+		}
     </script>
 </body>
 </html>
