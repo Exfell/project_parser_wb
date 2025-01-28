@@ -59,6 +59,7 @@
         .result {
             margin: 20px;
             font-weight: bold;
+			font-size:24px;
         }
         a {
             color: #00ff00;
@@ -107,6 +108,28 @@
             padding: 15px;
             font-size: 14px;
         }
+		.filter-menu {
+            margin: 20px auto;
+            width: 420px;
+            text-align: left;
+        }
+        .filter-menu-summary {
+            background-color: rgb(240, 240, 240);
+            color: black;
+            padding: 10px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        .filter-menu-content {
+            display: none;
+            color: black;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        .filter-menu-content.active {
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -117,14 +140,18 @@
     <div>
         <input type="text" id="keywords" placeholder="Введите свой запрос (например: куртка зимняя)">
         <br>
-        <input type="number" id="low_price" placeholder="Введите минимальную сумму">
-        <br>
-        <input type="number" id="top_price" placeholder="Введите максимальную сумму">
-        <br>
-        <input type="number" id="discount" placeholder="Минимальная скидка (0, если не важно)">
-        <br>
-        <input type="number" step="0.1" id="min_rating" placeholder="Минимальная оценка (0, если не важно)">
-        <br>
+         <div class="filter-menu">
+            <div class="filter-menu-summary" onclick="toggleFilterMenu()">+ Показать дополнительные фильтры</div>
+            <div class="filter-menu-content" id="filterMenuContent">
+                <input type="number" id="low_price" placeholder="Введите минимальную сумму">
+                <br>
+                <input type="number" id="top_price" placeholder="Введите максимальную сумму">
+                <br>
+                <input type="number" id="discount" placeholder="Минимальная скидка в процентах (от 0 до 100)">
+                <br>
+                <input type="number" step="0.1" id="min_rating" placeholder="Минимальная оценка (например: 4.8, а не 4,8)">
+            </div>
+        </div>
         <button id="submitBtn" onclick="sendRequest()">Отправить</button>
     </div>
     <div class="result" id="result"></div>
@@ -170,7 +197,20 @@
 	<script>
         // Выносим IP-адрес сервера в переменную
         const serverIP = "http://62.113.42.136";
+		function toggleFilterMenu() {
+        const filterMenuContent = document.getElementById("filterMenuContent");
+        const filterMenuSummary = document.querySelector(".filter-menu-summary");
 
+        // Переключение класса "active"
+        filterMenuContent.classList.toggle("active");
+
+        // Меняем текст в зависимости от состояния
+        if (filterMenuContent.classList.contains("active")) {
+            filterMenuSummary.textContent = "− Убрать дополнительные фильтры";
+        } else {
+            filterMenuSummary.textContent = "+ Показать дополнительные фильтры";
+        }
+    }
         async function sendRequest() {
 			const button = document.getElementById("submitBtn"); // Получаем кнопку
 			button.disabled = true; // Блокируем кнопку при начале запроса
