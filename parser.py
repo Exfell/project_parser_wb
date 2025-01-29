@@ -80,6 +80,7 @@ def sanitize_filename(filename: str) -> str:
 
 async def scrap_page_with_retries(session: ClientSession, page: int, low_price: int, top_price: int, discount: int, keywords: str, min_rating: float, max_retries: int = 10):
     retries = 0
+    print(session, page)
     while retries < max_retries:
         try:
             data = await scrap_page(session, keywords, page, low_price, top_price, discount, min_rating)
