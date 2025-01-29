@@ -89,6 +89,9 @@ def sanitize_filename(filename: str) -> str:
 async def scrap_page_with_retries(session: ClientSession, page: int, low_price: int, top_price: int, discount: int, keywords: str, min_rating: float, max_retries: int = 10):
     retries = 0
     while retries < max_retries:
+        if session.closed:  # Проверяем, не закрылась ли сессия
+            print(f"[ERROR] Сессия закрыта перед запросом на страницу {page}! Пересоздаю...")
+            await create_session()
         try:
             data = await scrap_page(session, keywords, page, low_price, top_price, discount, min_rating)
             if get_total(data) > 1:
@@ -96,6 +99,7 @@ async def scrap_page_with_retries(session: ClientSession, page: int, low_price: 
         except Exception as e:
             print(f"Ошибка на странице {page}: {e}. Попытка {retries + 1}/{max_retries}...")
         retries += 1
+        await asyncio.sleep(1)
     print(f"Не удалось получить данные для страницы {page} после {max_retries} попыток.")
     return None
 
