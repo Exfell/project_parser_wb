@@ -129,12 +129,12 @@ async def parser(keywords: str = None, low_price: int = 1, top_price: int = 1000
         tasks = [scrap_page_with_retries(session, page, low_price, top_price, discount, keywords, min_rating) for page in range(1, pages + 1)]
 
         results = await asyncio.gather(*tasks)
-
+        print(f"[DEBUG] Взял results: {keywords}")
         for result in results:
             if result:
                 extracted_data = get_data_from_json(result, min_rating=min_rating, low_price=low_price, top_price=top_price)
                 data_list.extend(extracted_data)
-
+        print(f"[DEBUG] Прошёл results: {keywords}")
         category = data_t['metadata']['title']
         print(f'Сбор данных завершен. Собрано: {len(data_list)} товаров.')
         filename = sanitize_filename(f'{category}_from_{low_price}_to_{top_price}_rating_{min_rating}')
