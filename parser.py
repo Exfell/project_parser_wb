@@ -110,7 +110,9 @@ async def close_session():
         await session.close()
 
 async def parser(keywords: str = None, low_price: int = 1, top_price: int = 1000000, discount: int = 0, min_rating: float = 0):
+    print(f"[DEBUG] Получил запрос: keywords={keywords}, low_price={low_price}, top_price={top_price}, discount={discount}, min_rating={min_rating}")
     await create_session()
+    print(f"[DEBUG] Начинаю парсинг: {keywords}")
     try:
         data_t = await scrap_page_with_retries(session, page=1, low_price=low_price, top_price=top_price, discount=discount, keywords=keywords, min_rating=min_rating)
         if not data_t:
