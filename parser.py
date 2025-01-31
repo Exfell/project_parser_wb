@@ -7,18 +7,10 @@ import re
 import math, time
 from aiohttp import ClientSession
 from fake_useragent import UserAgent
-
+from aiohttp import TCPConnector
 # pip install openpyxl
 # pip install aiohttp
 # pip install xlsxwriter
-session = None
-
-async def create_session():
-    """Функция для создания сессии с нужными настройками"""
-    global session
-    if session is None or session.closed:
-        session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=100))
-
 
 async def scrap_page(session: ClientSession, keywords: str, page: int, low_price: int, top_price: int, discount: int = None, rating: float = 0) -> dict:
     """Асинхронная функция для запроса страницы."""
@@ -88,10 +80,8 @@ def sanitize_filename(filename: str) -> str:
 
 async def scrap_page_with_retries(session: ClientSession, page: int, low_price: int, top_price: int, discount: int, keywords: str, min_rating: float, max_retries: int = 10):
     retries = 0
+    print(session, page)
     while retries < max_retries:
-        if session.closed:  # Проверяем, не закрылась ли сессия
-            print(f"[ERROR] Сессия закрыта перед запросом на страницу {page}! Пересоздаю...")
-            await create_session()
         try:
             data = await scrap_page(session, keywords, page, low_price, top_price, discount, min_rating)
             if get_total(data) > 1:
@@ -99,21 +89,20 @@ async def scrap_page_with_retries(session: ClientSession, page: int, low_price: 
         except Exception as e:
             print(f"Ошибка на странице {page}: {e}. Попытка {retries + 1}/{max_retries}...")
         retries += 1
-        await asyncio.sleep(1)
     print(f"Не удалось получить данные для страницы {page} после {max_retries} попыток.")
     return None
 
-async def close_session():
-    """Закрывает глобальную сессию, если она открыта"""
-    global session
-    if session and not session.closed:
-        await session.close()
+
+semaphore = asyncio.Semaphore(10)
+async def limited_scrap_page(session, page, low_price, top_price, discount, keywords, min_rating):
+    """Функция, которая ограничивает количество одновременных запросов с помощью семафора."""
+    async with semaphore:  # "Захватываем" семафор
+        return await scrap_page_with_retries(session, page, low_price, top_price, discount, keywords, min_rating)
+
 
 async def parser(keywords: str = None, low_price: int = 1, top_price: int = 1000000, discount: int = 0, min_rating: float = 0):
-    print(f"[DEBUG] Получил запрос: keywords={keywords}, low_price={low_price}, top_price={top_price}, discount={discount}, min_rating={min_rating}")
-    await create_session()
-    print(f"[DEBUG] Начинаю парсинг: {keywords}")
-    try:
+    connector = TCPConnector(limit=100)
+    async with aiohttp.ClientSession(connector = connector) as session:
         data_t = await scrap_page_with_retries(session, page=1, low_price=low_price, top_price=top_price, discount=discount, keywords=keywords, min_rating=min_rating)
         if not data_t:
             print("Ошибка! Не удалось получить данные для первой страницы.")
@@ -126,23 +115,22 @@ async def parser(keywords: str = None, low_price: int = 1, top_price: int = 1000
             pages = 60
 
         data_list = []
-        tasks = [scrap_page_with_retries(session, page, low_price, top_price, discount, keywords, min_rating) for page in range(1, pages + 1)]
 
-        results = await asyncio.gather(*tasks)
-        print(f"[DEBUG] Взял results: {keywords}")
-        for result in results:
+        for page in range(1, pages + 1):
+            result = await limited_scrap_page(session, page, low_price, top_price, discount, keywords, min_rating)
+
             if result:
-                extracted_data = get_data_from_json(result, min_rating=min_rating, low_price=low_price, top_price=top_price)
+                extracted_data = get_data_from_json(result, min_rating=min_rating, low_price=low_price,
+                                                    top_price=top_price)
                 data_list.extend(extracted_data)
-        print(f"[DEBUG] Прошёл results: {keywords}")
+
+            await asyncio.sleep(1)  # Ждём 1 секунду перед следующим запросом
+
         category = data_t['metadata']['title']
         print(f'Сбор данных завершен. Собрано: {len(data_list)} товаров.')
         filename = sanitize_filename(f'{category}_from_{low_price}_to_{top_price}_rating_{min_rating}')
         save_excel(data_list, filename)
         return f'{filename}.xlsx'
-    finally:
-        await close_session()
-
 
 
 def save_excel(data: list, filename: str):
