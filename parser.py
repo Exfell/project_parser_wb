@@ -1,3 +1,4 @@
+@@ -1,159 +1,160 @@
 import aiohttp
 import asyncio
 import datetime
@@ -7,7 +8,7 @@ import re
 import math, time
 from aiohttp import ClientSession
 from fake_useragent import UserAgent
-from aiohttp import TCPConnector
+
 # pip install openpyxl
 # pip install aiohttp
 # pip install xlsxwriter
@@ -93,16 +94,8 @@ async def scrap_page_with_retries(session: ClientSession, page: int, low_price: 
     return None
 
 
-semaphore = asyncio.Semaphore(10)
-async def limited_scrap_page(session, page, low_price, top_price, discount, keywords, min_rating):
-    """Функция, которая ограничивает количество одновременных запросов с помощью семафора."""
-    async with semaphore:  # "Захватываем" семафор
-        return await scrap_page_with_retries(session, page, low_price, top_price, discount, keywords, min_rating)
-
-
 async def parser(keywords: str = None, low_price: int = 1, top_price: int = 1000000, discount: int = 0, min_rating: float = 0):
-    connector = TCPConnector(limit=100)
-    async with aiohttp.ClientSession(connector = connector) as session:
+    async with aiohttp.ClientSession() as session:
         data_t = await scrap_page_with_retries(session, page=1, low_price=low_price, top_price=top_price, discount=discount, keywords=keywords, min_rating=min_rating)
         if not data_t:
             print("Ошибка! Не удалось получить данные для первой страницы.")
@@ -115,16 +108,16 @@ async def parser(keywords: str = None, low_price: int = 1, top_price: int = 1000
             pages = 60
 
         data_list = []
-
+        tasks = []
         for page in range(1, pages + 1):
-            result = await limited_scrap_page(session, page, low_price, top_price, discount, keywords, min_rating)
+            tasks.append(scrap_page_with_retries(session, page, low_price, top_price, discount, keywords, min_rating))
 
+        results = await asyncio.gather(*tasks)
+
+        for result in results:
             if result:
-                extracted_data = get_data_from_json(result, min_rating=min_rating, low_price=low_price,
-                                                    top_price=top_price)
+                extracted_data = get_data_from_json(result, min_rating=min_rating, low_price=low_price, top_price=top_price)
                 data_list.extend(extracted_data)
-
-            await asyncio.sleep(1)  # Ждём 1 секунду перед следующим запросом
 
         category = data_t['metadata']['title']
         print(f'Сбор данных завершен. Собрано: {len(data_list)} товаров.')
