@@ -18,7 +18,7 @@ async def create_session():
     global session
     if session is None or session.closed:
         session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=60)) # Semaphore - ограниченное кол-во одновременных запросов с фронетнда, TCPConnector - запросов на WB API
-        
+
 async def scrap_page(session: ClientSession, keywords: str, page: int, low_price: int, top_price: int, discount: int = None, rating: float = 0) -> dict:
     """Асинхронная функция для запроса страницы."""
     ua = UserAgent()
@@ -37,7 +37,7 @@ async def scrap_page(session: ClientSession, keywords: str, page: int, low_price
         'Accept': 'application/json',
     }
 
-    async with session.get(url, headers=headers) as response:
+    async with session.get(url, headers=headers,timeout=aiohttp.ClientTimeout(total=10)) as response:
         response_text = await response.text()  # Получаем текст ответа
 
         if response.status == 200:
