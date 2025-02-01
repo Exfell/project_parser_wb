@@ -11,6 +11,14 @@ from fake_useragent import UserAgent
 # pip install openpyxl
 # pip install aiohttp
 # pip install xlsxwriter
+session = None
+
+async def create_session():
+    """Функция для создания сессии с нужными настройками"""
+    global session
+    if session is None or session.closed:
+        #session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=60)) # Semaphore - ограниченное кол-во одновременных запросов с фронетнда, TCPConnector - запросов на WB API
+        session = aiohttp.ClientSession()
 
 async def scrap_page(session: ClientSession, keywords: str, page: int, low_price: int, top_price: int, discount: int = None, rating: float = 0) -> dict:
     """Асинхронная функция для запроса страницы."""
@@ -80,7 +88,6 @@ def sanitize_filename(filename: str) -> str:
 
 async def scrap_page_with_retries(session: ClientSession, page: int, low_price: int, top_price: int, discount: int, keywords: str, min_rating: float, max_retries: int = 10):
     retries = 0
-    print(session, page)
     while retries < max_retries:
         try:
             data = await scrap_page(session, keywords, page, low_price, top_price, discount, min_rating)
@@ -94,7 +101,8 @@ async def scrap_page_with_retries(session: ClientSession, page: int, low_price: 
 
 
 async def parser(keywords: str = None, low_price: int = 1, top_price: int = 1000000, discount: int = 0, min_rating: float = 0):
-    async with aiohttp.ClientSession() as session:
+    await create_session()
+    try:
         data_t = await scrap_page_with_retries(session, page=1, low_price=low_price, top_price=top_price, discount=discount, keywords=keywords, min_rating=min_rating)
         if not data_t:
             print("Ошибка! Не удалось получить данные для первой страницы.")
@@ -107,22 +115,25 @@ async def parser(keywords: str = None, low_price: int = 1, top_price: int = 1000
             pages = 60
 
         data_list = []
-        tasks = []
-        for page in range(1, pages + 1):
-            tasks.append(scrap_page_with_retries(session, page, low_price, top_price, discount, keywords, min_rating))
+        tasks = [scrap_page_with_retries(session, page, low_price, top_price, discount, keywords, min_rating) for page in range(1, pages + 1)]
 
-        results = await asyncio.gather(*tasks)
-
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # ссли gather сломается, то программа не продолжит работу, т.к. он по умолчанию останавливает всю программу, если хотя бы одна корутина вызывает исключение
         for result in results:
-            if result:
-                extracted_data = get_data_from_json(result, min_rating=min_rating, low_price=low_price, top_price=top_price)
-                data_list.extend(extracted_data)
+            if isinstance(result, Exception):
+                print(f"Ошибка при парсинге страницы: {result}")  # Логируем ошибку, но не падаем
+                continue  # Пропускаем этот результат
+            extracted_data = get_data_from_json(result, min_rating=min_rating, low_price=low_price, top_price=top_price)
+            data_list.extend(extracted_data)
 
         category = data_t['metadata']['title']
         print(f'Сбор данных завершен. Собрано: {len(data_list)} товаров.')
         filename = sanitize_filename(f'{category}_from_{low_price}_to_{top_price}_rating_{min_rating}')
         save_excel(data_list, filename)
         return f'{filename}.xlsx'
+    except Exception as e:
+        print(e)
+
 
 
 def save_excel(data: list, filename: str):
