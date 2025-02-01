@@ -4,19 +4,9 @@ import os
 import asyncio
 from parser import parser
 import logging
-import sys
+
 # Отключаем информацию от asyncio
 logging.getLogger('asyncio').setLevel(logging.CRITICAL)
-sys.stdout.reconfigure(line_buffering=True)
-logging.basicConfig(
-    level=logging.INFO,  # Можно изменить на DEBUG для подробных логов
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler("/var/log/flask_backend.log"),  # Запись в файл
-        logging.StreamHandler(sys.stdout)  # Дублирование в stdout
-    ]
-)
-
 app = Quart(__name__)
 cors(app)  # Для разрешения запросов с фронтенда
 
