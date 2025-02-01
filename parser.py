@@ -17,9 +17,8 @@ async def create_session():
     """Функция для создания сессии с нужными настройками"""
     global session
     if session is None or session.closed:
-        #session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=60)) # Semaphore - ограниченное кол-во одновременных запросов с фронетнда, TCPConnector - запросов на WB API
-        session = aiohttp.ClientSession()
-
+        session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=60)) # Semaphore - ограниченное кол-во одновременных запросов с фронетнда, TCPConnector - запросов на WB API
+        
 async def scrap_page(session: ClientSession, keywords: str, page: int, low_price: int, top_price: int, discount: int = None, rating: float = 0) -> dict:
     """Асинхронная функция для запроса страницы."""
     ua = UserAgent()
