@@ -37,7 +37,7 @@ async def scrap_page(session: ClientSession, keywords: str, page: int, low_price
         'Accept': 'application/json',
     }
 
-    async with session.get(url, headers=headers,timeout=aiohttp.ClientTimeout(total=10)) as response:
+    async with session.get(url, headers=headers,timeout=aiohttp.ClientTimeout(total=5)) as response:
         response_text = await response.text()  # Получаем текст ответа
 
         if response.status == 200:
