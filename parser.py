@@ -3,7 +3,7 @@ import pandas as pd
 import re
 import math
 import time
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 from fake_useragent import UserAgent
 import requests
 from requests.adapters import HTTPAdapter
@@ -90,12 +90,10 @@ def sanitize_filename(filename: str) -> str:
 def scrap_page_with_retries(session: requests.Session, page: int, low_price: int, top_price: int, discount: int,
                             keywords: str, min_rating: float, max_retries: int = 10):
     retries = 0
-    print(f"Keywords {keywords}: Page {page}")
     while retries < max_retries:
         try:
             data = scrap_page(session, keywords, page, low_price, top_price, discount, min_rating)
             if data and get_total(data) > 1:
-                print(f"ГОТОВО Keywords {keywords}: Page {page}")
                 return data
         except Exception as e:
             print(f"Ошибка на странице {page}: {e}. Попытка {retries + 1}/{max_retries}...")
@@ -128,7 +126,7 @@ def process_keyword(args):
                      for page in range(1, pages + 1)]
 
         # Параллельная обработка страниц с использованием потоков
-        with ThreadPoolExecutor(max_workers=20) as executor:
+        with ThreadPoolExecutor(max_workers=1000) as executor:
             results = list(executor.map(lambda args: scrap_page_with_retries(*args), page_args))
 
         # Сбор и обработка результатов
@@ -180,10 +178,14 @@ def main():
         tasks.append((keywords, low_price, top_price, discount, min_rating))
 
     start = time.time()
-
+    results = []
     # Параллельная обработка разных ключевых слов в процессах
     with ProcessPoolExecutor() as executor:
-        results = list(executor.map(process_keyword, tasks))
+        future_to_task = {executor.submit(process_keyword, task): task for task in tasks}
+
+        for future in as_completed(future_to_task):  # Получаем результаты по мере завершения
+            result = future.result()
+            results.append(result)
 
     print(f"Все задачи завершены за {time.time() - start:.2f} сек.")
     print("Результаты:", [r for r in results if r])
