@@ -1,26 +1,33 @@
-import aiohttp
-import asyncio
-import datetime
 import json
 import pandas as pd
 import re
-import math, time
-from aiohttp import ClientSession
+import math
+import time
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from fake_useragent import UserAgent
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
-# pip install openpyxl
-# pip install aiohttp
-# pip install xlsxwriter
-session = None
+# Настройки для повторных попыток
+retry_strategy = Retry(
+    total=5,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504]
+)
 
-async def create_session():
-    """Функция для создания сессии с нужными настройками"""
-    global session
-    if session is None or session.closed:
-        session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit_per_host=60)) # Semaphore - ограниченное кол-во одновременных запросов с фронетнда, TCPConnector - запросов на WB API
 
-async def scrap_page(session: ClientSession, keywords: str, page: int, low_price: int, top_price: int, discount: int = None, rating: float = 0) -> dict:
-    """Асинхронная функция для запроса страницы."""
+def create_session():
+    session = requests.Session()
+    adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=100, pool_maxsize=100)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
+
+
+def scrap_page(session: requests.Session, keywords: str, page: int, low_price: int, top_price: int,
+               discount: int = None, rating: float = 0) -> dict:
+    """Функция для запроса страницы."""
     ua = UserAgent()
     current = ua.random
     keywords = keywords.replace(' ', '%20')
@@ -36,19 +43,13 @@ async def scrap_page(session: ClientSession, keywords: str, page: int, low_price
         'User-Agent': current,
         'Accept': 'application/json',
     }
-
-    async with session.get(url, headers=headers,timeout=aiohttp.ClientTimeout(total=5)) as response:
-        response_text = await response.text()  # Получаем текст ответа
-
-        if response.status == 200:
-            try:
-                # Используем json.loads на строке текста
-                json_data = json.loads(response_text)
-                return json_data
-            except json.JSONDecodeError:
-                raise ValueError("Failed to parse JSON response")
-        else:
-            raise Exception(f"Request failed with status code {response.status}: {response_text}")
+    try:
+        response = session.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        print(f"Ошибка при запросе страницы {page}: {e}")
+        return None
 
 
 def get_total(json_file: dict):
@@ -59,7 +60,8 @@ def get_total(json_file: dict):
 def get_data_from_json(json_file: dict, min_rating: float = 0.0, low_price: int = 1, top_price: int = 1000000) -> list:
     data_list = []
     for data in json_file['data']['products']:
-        salePriceU = int(data.get('salePriceU', 0) / 100) if data.get('salePriceU') else int(data.get("priceU", 0) / 100)
+        salePriceU = int(data.get('salePriceU', 0) / 100) if data.get('salePriceU') else int(
+            data.get("priceU", 0) / 100)
         reviewRating = data.get('reviewRating', 0)
         if reviewRating >= min_rating and low_price <= salePriceU <= top_price:
             data_list.append({
@@ -85,27 +87,35 @@ def sanitize_filename(filename: str) -> str:
     return sanitized
 
 
-async def scrap_page_with_retries(session: ClientSession, page: int, low_price: int, top_price: int, discount: int, keywords: str, min_rating: float, max_retries: int = 10):
+def scrap_page_with_retries(session: requests.Session, page: int, low_price: int, top_price: int, discount: int,
+                            keywords: str, min_rating: float, max_retries: int = 10):
     retries = 0
+    print(f"Keywords {keywords}: Page {page}")
     while retries < max_retries:
         try:
-            data = await scrap_page(session, keywords, page, low_price, top_price, discount, min_rating)
-            if get_total(data) > 1:
+            data = scrap_page(session, keywords, page, low_price, top_price, discount, min_rating)
+            if data and get_total(data) > 1:
+                print(f"ГОТОВО Keywords {keywords}: Page {page}")
                 return data
         except Exception as e:
             print(f"Ошибка на странице {page}: {e}. Попытка {retries + 1}/{max_retries}...")
-        retries += 1
+            retries += 1
     print(f"Не удалось получить данные для страницы {page} после {max_retries} попыток.")
     return None
 
+# старый parser
+def process_keyword(args):
+    keywords, low_price, top_price, discount, min_rating = args
+    start_time = time.time()
+    print(f"Начало обработки ключевого слова: {keywords}")
 
-async def parser(keywords: str = None, low_price: int = 1, top_price: int = 1000000, discount: int = 0, min_rating: float = 0):
-    await create_session()
-    try:
-        data_t = await scrap_page_with_retries(session, page=1, low_price=low_price, top_price=top_price, discount=discount, keywords=keywords, min_rating=min_rating)
+    with create_session() as session:
+        # Получение данных первой страницы для определения общего количества
+        data_t = scrap_page_with_retries(session, page=1, low_price=low_price, top_price=top_price, discount=discount,
+                                         keywords=keywords, min_rating=min_rating)
         if not data_t:
             print("Ошибка! Не удалось получить данные для первой страницы.")
-            return
+            return None
 
         total = get_total(data_t)
         items_per_page = 100
@@ -113,26 +123,29 @@ async def parser(keywords: str = None, low_price: int = 1, top_price: int = 1000
         if pages > 60:
             pages = 60
 
+        # Подготовка аргументов для потоков
+        page_args = [(session, page, low_price, top_price, discount, keywords, min_rating)
+                     for page in range(1, pages + 1)]
+
+        # Параллельная обработка страниц с использованием потоков
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            results = list(executor.map(lambda args: scrap_page_with_retries(*args), page_args))
+
+        # Сбор и обработка результатов
         data_list = []
-        tasks = [scrap_page_with_retries(session, page, low_price, top_price, discount, keywords, min_rating) for page in range(1, pages + 1)]
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        # ссли gather сломается, то программа не продолжит работу, т.к. он по умолчанию останавливает всю программу, если хотя бы одна корутина вызывает исключение
         for result in results:
-            if isinstance(result, Exception):
-                print(f"Ошибка при парсинге страницы: {result}")  # Логируем ошибку, но не падаем
-                continue  # Пропускаем этот результат
-            extracted_data = get_data_from_json(result, min_rating=min_rating, low_price=low_price, top_price=top_price)
-            data_list.extend(extracted_data)
+            if result:
+                data_list.extend(get_data_from_json(result, min_rating, low_price, top_price))
 
-        category = data_t['metadata']['title']
-        print(f'Сбор данных завершен. Собрано: {len(data_list)} товаров.')
-        filename = sanitize_filename(f'{category}_from_{low_price}_to_{top_price}_rating_{min_rating}')
-        save_excel(data_list, filename)
+        # Сохранение в Excel
+        if data_list:
+            category = data_t['metadata']['title']
+            filename = sanitize_filename(f'{category}_from_{low_price}_to_{top_price}_rating_{min_rating}')
+            save_excel(data_list, filename)
+            print(f'Сбор {keywords} данных завершен. Собрано: {len(data_list)} товаров.')
+
+        print(f"Завершено: {keywords} за {time.time() - start_time:.2f} сек.")
         return f'{filename}.xlsx'
-    except Exception as e:
-        print(e)
-
 
 
 def save_excel(data: list, filename: str):
@@ -154,17 +167,27 @@ def save_excel(data: list, filename: str):
         worksheet.set_column(11, 12, width=67)
 
 
-if __name__ == '__main__':
+def main():
+    tasks = []
     while True:
-        try:
-            keywords = input('Введите ключевые слова для фильтрации (через пробел, или просто нажмите Enter):').strip()
-            low_price = int(input('Введите минимальную сумму товара: '))
-            top_price = int(input('Введите максимальную сумму товара: '))
-            discount = int(input('Введите минимальную скидку (введите 0 если без скидки): '))
-            min_rating = float(input('Введите минимальную оценку (введите 0 для любого рейтинга): '))
-            start = time.time()
-            asyncio.run(parser(low_price=low_price, top_price=top_price, discount=discount, min_rating=min_rating, keywords=keywords))
-            end = time.time()
-            print(end-start)
-        except ValueError:
-            print('Ошибка ввода! Проверьте, что все введенные данные являются числами.\nПерезапуск...')
+        keywords = input('Введите ключевые слова для фильтрации (через пробел, или просто нажмите Enter):').strip()
+        if not keywords:
+            break
+        low_price = int(input('Введите минимальную сумму товара: '))
+        top_price = int(input('Введите максимальную сумму товара: '))
+        discount = int(input('Введите минимальную скидку (введите 0 если без скидки): '))
+        min_rating = float(input('Введите минимальную оценку (введите 0 для любого рейтинга): '))
+        tasks.append((keywords, low_price, top_price, discount, min_rating))
+
+    start = time.time()
+
+    # Параллельная обработка разных ключевых слов в процессах
+    with ProcessPoolExecutor() as executor:
+        results = list(executor.map(process_keyword, tasks))
+
+    print(f"Все задачи завершены за {time.time() - start:.2f} сек.")
+    print("Результаты:", [r for r in results if r])
+
+
+if __name__ == '__main__':
+    main()
