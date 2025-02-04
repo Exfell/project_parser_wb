@@ -2,7 +2,7 @@ from quart import Quart, request, jsonify, send_file
 from quart_cors import cors
 import os
 import asyncio
-from parser import parser
+from parser import process_keyword
 import logging
 
 # Отключаем информацию от asyncio
@@ -14,14 +14,24 @@ cors(app)  # Для разрешения запросов с фронтенда
 async def api_parse():
     try:
         data = await request.json
-        keywords = data.get('keywords', '')
-        low_price = int(data.get('low_price', 1) or 1)  # Если значение пустое, подставляем 1
-        top_price = int(data.get('top_price', 1000000) or 1000000)  # Если значение пустое, подставляем 1000000
-        discount = int(data.get('discount', 0) or 0)  # Если значение пустое, подставляем 0
-        min_rating = float(data.get('min_rating', 0) or 0)  # Если значение пустое, подставляем 0
+        params = (
+            data.get('keywords', '') or '',
+            int(data.get('low_price', 1) or 1),
+            int(data.get('top_price', 1000000) or 1000000),
+            int(data.get('discount', 0) or 0),
+            float(data.get('min_rating', 0) or 0)
+        )  # Если значение пустое, подставляем 0
         # Вызов парсера
-        filename = await parser(keywords, low_price, top_price, discount, min_rating) # Используйте await
-        return jsonify({"message": "Парсинг завершен успешно!", "file": filename})
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, process_keyword, params) # Используйте await
+        if result:
+            # print(result,'ХЕЙ, ЭТО ОН СДЕЛАН==================') # это всё в одно и то же время делается, т.е. result  нас выходит только тогда, когда все доделаются
+            return jsonify({
+                "status": "completed",
+                "message": "Парсинг успешно завершен",
+                "file": result
+            })
+        return jsonify({"status": "error", "message": "Не удалось получить данные"}), 500
     except Exception as e:
         return jsonify({"message": str(e)}), 400
 
@@ -29,19 +39,15 @@ async def api_parse():
 @app.route('/download/<filename>', methods=['GET'])
 async def download(filename):
     file_path = os.path.join('.', filename)
-    print('Зашёл', file_path)
     if not os.path.exists(file_path):
         return jsonify({"message": "Файл не найден"}), 404
-
     try:
         # Отправляем файл
         response = await send_file(file_path, as_attachment=True)
-        print('Работает')
-
         return response
-
     except Exception as e:
         return jsonify({"message": f"Ошибка при отправке файла: {e}"}), 500
+
 
 @app.route('/api/hello', methods=['GET'])
 async def hello():
@@ -49,4 +55,5 @@ async def hello():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False, loop=asyncio.new_event_loop())
+    app.run(host='0.0.0.0', port=5200, debug=False)
+# проблема, если что, была в том, что порт был занят
